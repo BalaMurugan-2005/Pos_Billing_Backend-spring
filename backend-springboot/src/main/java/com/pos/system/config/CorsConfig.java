@@ -9,45 +9,64 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
 
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-    @Value("${cors.allowed-origins}")
+    @Value("${cors.allowed-origins:http://localhost:3000,http://localhost:5173,http://localhost:5174}")
     private String allowedOriginsRaw;
 
-    @Value("${cors.allowed-methods}")
+    @Value("${cors.allowed-methods:GET,POST,PUT,PATCH,DELETE,OPTIONS}")
     private String[] allowedMethods;
 
-    @Value("${cors.allow-credentials}")
+    @Value("${cors.allow-credentials:true}")
     private boolean allowCredentials;
+
+    private List<String> getResolvedOriginPatterns() {
+        List<String> patterns = new ArrayList<>();
+        
+        // Common deployment domains
+        patterns.add("https://*.onrender.com");
+        patterns.add("https://*.vercel.app");
+        patterns.add("https://*.netlify.app");
+        patterns.add("http://localhost:*");
+        patterns.add("http://127.0.0.1:*");
+
+        // Parse custom origins from properties/env vars
+        if (allowedOriginsRaw != null && !allowedOriginsRaw.isBlank()) {
+            for (String origin : allowedOriginsRaw.split(",")) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty()) {
+                    patterns.add(trimmed);
+                }
+            }
+        }
+
+        // Fallback catch-all pattern for flexibility with credentials
+        patterns.add("https://*");
+        
+        return patterns;
+    }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Parse comma-separated origins from properties
-        List<String> originList = Arrays.asList(allowedOriginsRaw.split(","));
-        for (String origin : originList) {
-            String trimmed = origin.trim();
-            if (!trimmed.isEmpty()) {
-                config.addAllowedOrigin(trimmed);
-            }
+        List<String> patterns = getResolvedOriginPatterns();
+        for (String pattern : patterns) {
+            config.addAllowedOriginPattern(pattern);
         }
-
-        // Allow any *.onrender.com subdomain for production deploys
-        config.addAllowedOriginPattern("https://*.onrender.com");
-        config.addAllowedOriginPattern("http://localhost:*");
-        config.addAllowedOriginPattern("http://127.0.0.1:*");
 
         for (String method : allowedMethods) {
             config.addAllowedMethod(method.trim());
         }
 
         config.addAllowedHeader("*");
+        config.addExposedHeader("Authorization");
+        config.addExposedHeader("Content-Disposition");
         config.setAllowCredentials(allowCredentials);
         config.setMaxAge(3600L);
 
@@ -58,10 +77,12 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        List<String> patterns = getResolvedOriginPatterns();
         registry.addMapping("/**")
-                .allowedOriginPatterns("https://*.onrender.com", "http://localhost:*", "http://127.0.0.1:*")
+                .allowedOriginPatterns(patterns.toArray(new String[0]))
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
+                .exposedHeaders("Authorization", "Content-Disposition")
                 .allowCredentials(true)
                 .maxAge(3600);
     }
